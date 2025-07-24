@@ -11,7 +11,9 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get("/:id", async (req, res) => {
     const { id } = req.params as { id: string };
     const user = await userService.findById(id);
-    if (!user) throw fastify.httpErrors.notFound("User not found");
+    if (!user) {
+      throw fastify.httpErrors.notFound("User not found");
+    }
     res.send(user);
   });
 

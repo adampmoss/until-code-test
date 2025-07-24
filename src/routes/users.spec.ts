@@ -4,22 +4,16 @@ import { userRoutes } from "./users";
 import { userService } from "../plugins/userService";
 import { mockNewUserRequest, mockUser } from "../__mocks__/user";
 import { User } from "@prisma/client";
-
-// Mock userService
-vi.mock("../plugins/userService", () => ({
-  userService: {
-    findAll: vi.fn(),
-    findById: vi.fn(),
-    create: vi.fn(),
-    update: vi.fn(),
-  },
-}));
+import { setupErrorHandler } from "../utils/errors";
+import sensible from "@fastify/sensible";
 
 describe("test the endpoints in userRoutes", () => {
   let fastify: FastifyInstance;
 
   beforeEach(async () => {
     fastify = Fastify();
+    await fastify.register(sensible);
+    setupErrorHandler(fastify);
     fastify.register(userRoutes, { prefix: "/users" });
     await fastify.ready();
   });
@@ -31,34 +25,44 @@ describe("test the endpoints in userRoutes", () => {
 
   it("GET /users should return list of users", async () => {
     const mockUsers = [mockUser, mockUser] as User[];
-    userService.findAll.mockResolvedValue(mockUsers);
+    vi.spyOn(userService, "findAll").mockResolvedValue(mockUsers);
 
     const response = await fastify.inject({
       method: "GET",
       url: "/users",
     });
 
+    const expected = mockUsers.map((user) => ({
+      ...user,
+      dateOfBirth: user.dateOfBirth.toISOString(),
+    }));
+
     expect(response.statusCode).toBe(200);
-    expect(JSON.parse(response.body)).toEqual(mockUsers);
+    expect(JSON.parse(response.body)).toEqual(expected);
     expect(userService.findAll).toHaveBeenCalled();
   });
 
   it("GET /users/:id returns a user", async () => {
     const user = mockUser as User;
-    userService.findById.mockResolvedValue(user);
+    vi.spyOn(userService, "findById").mockResolvedValue(user);
 
     const response = await fastify.inject({
       method: "GET",
       url: "/users/1",
     });
 
+    const expected = {
+      ...user,
+      dateOfBirth: user.dateOfBirth.toISOString(),
+    };
+
     expect(response.statusCode).toBe(200);
-    expect(JSON.parse(response.body)).toEqual(user);
+    expect(JSON.parse(response.body)).toEqual(expected);
     expect(userService.findById).toHaveBeenCalledWith("1");
   });
 
   it("GET /users/:id returns 404 if user not found", async () => {
-    userService.findById.mockResolvedValue(null);
+    vi.spyOn(userService, "findById").mockResolvedValue(null);
 
     const response = await fastify.inject({
       method: "GET",
@@ -72,7 +76,7 @@ describe("test the endpoints in userRoutes", () => {
   it("POST /users should create a user", async () => {
     const payload = mockNewUserRequest;
     const createdUser = { id: "2", ...payload };
-    userService.create.mockResolvedValue(createdUser);
+    vi.spyOn(userService, "create").mockResolvedValue(createdUser);
 
     const response = await fastify.inject({
       method: "POST",
@@ -80,15 +84,32 @@ describe("test the endpoints in userRoutes", () => {
       payload,
     });
 
+    const expected = {
+      ...createdUser,
+      dateOfBirth: createdUser.dateOfBirth.toISOString(),
+    };
+
     expect(response.statusCode).toBe(200);
-    expect(JSON.parse(response.body)).toEqual(createdUser);
+    expect(JSON.parse(response.body)).toEqual(expected);
     expect(userService.create).toHaveBeenCalledWith(payload);
   });
 
+  it("POST /users should should return 402 if payload invalid", async () => {
+    const payload = { ...mockNewUserRequest, firstName: "" };
+
+    const response = await fastify.inject({
+      method: "POST",
+      url: "/users",
+      payload,
+    });
+
+    expect(response.statusCode).toBe(402);
+  });
+
   it("PUT /users/:id should update a user", async () => {
-    const payload = { name: "Charlie", email: "charlie@example.com" };
-    const updatedUser = { id: "3", ...payload };
-    userService.update.mockResolvedValue(updatedUser);
+    const payload = { ...mockNewUserRequest, firstName: "Jane" };
+    const updatedUser = { ...mockUser };
+    vi.spyOn(userService, "update").mockResolvedValue(updatedUser);
 
     const response = await fastify.inject({
       method: "PUT",
@@ -96,8 +117,25 @@ describe("test the endpoints in userRoutes", () => {
       payload,
     });
 
+    const expected = {
+      ...updatedUser,
+      dateOfBirth: updatedUser.dateOfBirth.toISOString(),
+    };
+
     expect(response.statusCode).toBe(200);
-    expect(JSON.parse(response.body)).toEqual(updatedUser);
+    expect(JSON.parse(response.body)).toEqual(expected);
     expect(userService.update).toHaveBeenCalledWith("3", payload);
+  });
+
+  it("PUT /users/:id should should return 402 if payload invalid", async () => {
+    const payload = { id: "123", ...mockNewUserRequest, firstName: "" };
+
+    const response = await fastify.inject({
+      method: "PUT",
+      url: "/users/123",
+      payload,
+    });
+
+    expect(response.statusCode).toBe(402);
   });
 });
